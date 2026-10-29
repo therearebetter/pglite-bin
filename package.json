@@ -1,0 +1,19 @@
+{
+  "name": "pglite",
+  "module": "index.ts",
+  "type": "module",
+  "scripts": {
+    "build": "bun build ./index.ts --compile --outfile pglite-server"
+  },
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@electric-sql/pglite-socket": "^0.1.6",
+    "pkg": "^5.8.1"
+  }
+}
