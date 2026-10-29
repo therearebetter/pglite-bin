@@ -3,7 +3,7 @@
   "module": "index.ts",
   "type": "module",
   "scripts": {
-    "build": "bun build ./index.ts --compile --outfile pglite-server"
+    "build": "bun run ./scripts/patch-pglite-socket.ts && bun build ./index.ts --compile --outfile pglite-server"
   },
   "private": true,
   "devDependencies": {

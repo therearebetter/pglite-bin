@@ -46,6 +46,9 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
+      - name: Prepare bundled extension loader
+        run: bun run ./scripts/patch-pglite-socket.ts
+
       - name: Build binary
         run: bun build ./index.ts --compile --target=${{ matrix.target }} --outfile=pglite-server-${{ matrix.suffix }}${{ matrix.extension }}
 
