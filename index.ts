@@ -1,5 +1,8 @@
-import { createRequire, syncBuiltinESMExports } from "node:module";
-import { Readable } from "node:stream";
+import { createRequire } from "node:module";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 // Bun embeds imported `type: "file"` assets in compiled executables. PGlite's
 // WASM loader reads this asset from disk, so materialize the embedded asset
@@ -25,7 +28,6 @@ import vectorTar from "./node_modules/@electric-sql/pglite/dist/vector.tar.gz" w
 
 const require = createRequire(import.meta.url);
 const fs = require("node:fs/promises") as typeof import("node:fs/promises");
-const nodeFs = require("node:fs") as typeof import("node:fs");
 const originalReadFile = fs.readFile;
 const embeddedData = await Bun.file(pglitedata).arrayBuffer();
 const embeddedWasm = await Bun.file(pglitewasm).arrayBuffer();
@@ -39,50 +41,36 @@ const embeddedExtensionAssets = new Map([
   ["pgtap.tar.gz", await Bun.file(pgtapTar).arrayBuffer()],
   ["vector.tar.gz", await Bun.file(vectorTar).arrayBuffer()],
 ]);
-const extensionAssetForPath = (path: unknown): ArrayBuffer | undefined => {
-  const pathString = String(path);
-  for (const [assetName, contents] of embeddedExtensionAssets) {
-    if (pathString.endsWith(assetName)) {
-      return contents;
-    }
-  }
-  return undefined;
-};
+const extensionAssetDirectory = mkdtempSync(join(tmpdir(), "pglite-server-assets-"));
+for (const [assetName, contents] of embeddedExtensionAssets) {
+  writeFileSync(join(extensionAssetDirectory, assetName), Buffer.from(contents));
+}
+process.on("exit", () => rmSync(extensionAssetDirectory, { recursive: true, force: true }));
 
-const originalExistsSync = nodeFs.existsSync;
-nodeFs.existsSync = ((path: Parameters<typeof nodeFs.existsSync>[0]) =>
-  extensionAssetForPath(path) ? true : originalExistsSync(path)) as typeof nodeFs.existsSync;
-
-const originalCreateReadStream = nodeFs.createReadStream;
-nodeFs.createReadStream = ((path: Parameters<typeof nodeFs.createReadStream>[0], ...args: any[]) => {
-  const contents = extensionAssetForPath(path);
-  if (contents) {
-    return Readable.from([Buffer.from(contents)]);
-  }
-  return originalCreateReadStream(path as any, ...args as any);
-}) as typeof nodeFs.createReadStream;
-syncBuiltinESMExports();
+const withEmbeddedBundle = (extension: any, assetName: string) => ({
+  ...extension,
+  setup: async (pg: any, emscriptenOpts: any) => ({
+    ...(await extension.setup(pg, emscriptenOpts)),
+    bundlePath: pathToFileURL(join(extensionAssetDirectory, assetName)),
+  }),
+});
 
 // The socket server uses a runtime-computed import path for built-in
 // extensions. The release build patches that lookup to use this static map,
 // which allows Bun to bundle both the modules and their SQL extension assets.
 (globalThis as any).__PGLITE_BUILTIN_EXTENSIONS__ = {
-  age,
+  age: withEmbeddedBundle(age, "age.tar.gz"),
   live,
-  pg_hashids,
-  pg_ivm,
-  pg_textsearch,
-  pg_uuidv7,
-  pgtap,
-  vector,
+  pg_hashids: withEmbeddedBundle(pg_hashids, "pg_hashids.tar.gz"),
+  pg_ivm: withEmbeddedBundle(pg_ivm, "pg_ivm.tar.gz"),
+  pg_textsearch: withEmbeddedBundle(pg_textsearch, "pg_textsearch.tar.gz"),
+  pg_uuidv7: withEmbeddedBundle(pg_uuidv7, "pg_uuidv7.tar.gz"),
+  pgtap: withEmbeddedBundle(pgtap, "pgtap.tar.gz"),
+  vector: withEmbeddedBundle(vector, "vector.tar.gz"),
 };
 
 fs.readFile = (async (path: Parameters<typeof fs.readFile>[0], ...args: any[]) => {
   const pathString = String(path);
-  const extensionContents = extensionAssetForPath(pathString);
-  if (extensionContents) {
-    return Buffer.from(extensionContents);
-  }
   if (pathString.endsWith("pglite.data")) {
     return Buffer.from(embeddedData);
   }
