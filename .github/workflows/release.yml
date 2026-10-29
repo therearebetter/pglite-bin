@@ -1,0 +1,70 @@
+name: Build and release binaries
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x64
+            target: bun-linux-x64
+            suffix: linux-x64
+            extension: ""
+          - name: Linux ARM64
+            target: bun-linux-arm64
+            suffix: linux-arm64
+            extension: ""
+          - name: macOS x64
+            target: bun-darwin-x64
+            suffix: darwin-x64
+            extension: ""
+          - name: macOS ARM64
+            target: bun-darwin-arm64
+            suffix: darwin-arm64
+            extension: ""
+          - name: Windows x64
+            target: bun-windows-x64
+            suffix: windows-x64
+            extension: .exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install --frozen-lockfile
+
+      - name: Build binary
+        run: bun build ./index.ts --compile --target=${{ matrix.target }} --outfile=pglite-server-${{ matrix.suffix }}${{ matrix.extension }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pglite-server-${{ matrix.suffix }}
+          path: pglite-server-${{ matrix.suffix }}${{ matrix.extension }}
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*
