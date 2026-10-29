@@ -65,6 +65,9 @@ jobs:
           path: release-assets
           merge-multiple: true
 
+      - name: Generate checksums
+        run: cd release-assets && sha256sum pglite-server-* > SHA256SUMS
+
       - uses: softprops/action-gh-release@v2
         with:
           files: release-assets/*
